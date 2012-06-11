@@ -387,9 +387,9 @@ function videograph.testme(path)
    print '<videograph> constructing graph'
    graph = videograph.graph(tensor)
    print '<videograph> segmenting graph'
-   segm = videograph.segmentmst(graph,5,300,true)
+   segm = videograph.segmentmst(graph,5,200,true)
    print '<videograph> creating video from graph'
-   processed = ffmpeg.Video{tensor=segm, fps=10}
+   processed = ffmpeg.Video{tensor=segm, fps=5}
    video:play{loop=true}
    processed:play{loop=true}
    print '<videograph> done.'

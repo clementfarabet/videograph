@@ -365,3 +365,32 @@ function videograph.adjacency(...)
    -- return adjacency matrix
    return adjacency
 end
+
+----------------------------------------------------------------------
+-- test me function
+--
+function videograph.testme(path)
+   if not path then
+      print('please provide path to video file: testme("path/to/video")')
+      return
+   end
+   require 'ffmpeg'
+   print '<videograph> loading video'
+   video = ffmpeg.Video{path=path, width=500, height=330, fps=5, length=20,
+                        encoding='ppm', delete=false}
+   print '<videograph> exporting video to tensor'
+   tensor = video:totensor{}
+   print '<videograph> smoothing video'
+   for i = 1,(#tensor)[1] do
+      tensor[i] = image.convolve(tensor[i], image.gaussian(3), 'same')
+   end
+   print '<videograph> constructing graph'
+   graph = videograph.graph(tensor)
+   print '<videograph> segmenting graph'
+   segm = videograph.segmentmst(graph,5,300,true)
+   print '<videograph> creating video from graph'
+   processed = ffmpeg.Video{tensor=segm, fps=10}
+   video:play{loop=true}
+   processed:play{loop=true}
+   print '<videograph> done.'
+end

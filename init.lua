@@ -163,9 +163,9 @@ function videograph.extractcomponents(...)
                .. 'segm = videograph.segmentmst(graph)\n'
                .. 'components = videograph.extractcomponents(segm)',
             {type='torch.Tensor', 
-             help='input segmentation map (must be HxW), and each element must be in [1,NCLASSES]', req=true},
+             help='input segmentation map (must be LxHxW), and each element must be in [1,NCLASSES]', req=true},
             {type='torch.Tensor', 
-             help='auxiliary image: if given, then components are cropped from it (must be KxHxW)'},
+             help='auxiliary image: if given, then components are cropped from it (must be LxKxHxW)'},
             {type='string', 
              help='configuration, one of: bbox | masked', default='bbox'},
             {type='number', 
@@ -177,7 +177,7 @@ function videograph.extractcomponents(...)
 
    -- support LongTensors
    if torch.typename(input) == 'torch.LongTensor' then
-      input = torch.Tensor(input:size(1), input:size(2)):copy(input)
+      input = torch.Tensor(input:size(1), input:size(2), input:size(3)):copy(input)
    end
 
    -- generate lists
@@ -214,41 +214,6 @@ function videograph.extractcomponents(...)
       components.mask[i]        = masks[i]
    end
    components.size = function(self) return #self.surface end
-
-   -- auxiliary image given ?
-   if img and img:nDimension() == 3 then
-      local c = components
-      local maskit = false
-      if config == 'masked' then maskit = true end
-      for k = 1,i do
-         if c.surface[k] >= minsize then
-            -- get bounding box corners:
-            local top = c.bbox_top[k]
-            local height = c.bbox_height[k]
-            local left = c.bbox_left[k]
-            local width = c.bbox_width[k]
-
-            -- extract patch from image:
-            c.patch[k] = img:narrow(2,top,height):narrow(3,left,width):clone()
-
-            -- generate mask, if not available
-            if torch.typename(input) and not c.mask[k] then
-               -- the input is a grayscale image, crop it to get the mask:
-               c.mask[k] = input:narrow(1,top,height):narrow(2,left,width):clone()
-               local id = components.id[k]
-               local mask = function(x) if x == id then return 1 else return 0 end end
-               c.mask[k]:apply(mask)
-            end
-
-            -- mask box
-            if maskit then
-               for i = 1,c.patch[k]:size(1) do
-                  c.patch[k][i]:cmul(c.mask[k])
-               end
-            end
-         end
-      end
-   end
 
    -- return both lists
    return components
@@ -321,12 +286,8 @@ function videograph.adjacency(...)
                           .. 'segm = videograph.adjacency(segm, components)\n'
                           .. 'print(components.neighbors) -- list of neighbor IDs\n'
                           .. 'print(components.adjacency) -- adjacency matrix of IDs',
-                       {type='torch.Tensor', help='input segmentation map (must be HxW), and each element must be in [1,NCLASSES]', req=true},
-                       {type='table', help='component list, as returned by videograph.extractcomponents()'},
-                       '',
-                       {type='videograph.MergeTree', help='merge tree (dendrogram) of a graph', req=true},
-                       {type='table', help='component list, as returned by videograph.extractcomponents()'},
-                       {type='boolean', help='if true, returns a directed adjancy matrix, in which only son->parent edges are considered', default=false}))
+                       {type='torch.Tensor', help='input segmentation map (must be LxHxW), and each element must be in [1,NCLASSES]', req=true},
+                       {type='table', help='component list, as returned by videograph.extractcomponents()'}))
       xlua.error('incorrect arguments', 'videograph.adjacency')
    end
 
@@ -387,7 +348,9 @@ function videograph.testme(path)
    print '<videograph> constructing graph'
    graph = videograph.graph(tensor)
    print '<videograph> segmenting graph'
-   segm = videograph.segmentmst(graph,5,200,true)
+   segm = videograph.segmentmst(graph,5,200)
+   print '<videograph> colorize segmentation'
+   segm = videograph.colorize(segm)
    print '<videograph> creating video from graph'
    processed = ffmpeg.Video{tensor=segm, fps=5}
    video:play{loop=true}

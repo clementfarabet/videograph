@@ -575,8 +575,8 @@ int videograph_(segm2components)(lua_State *L) {
     data[13] = data[9] - data[8] + 1;    // box height
     data[14] = data[11] - data[10] + 1;    // box length
     data[15] = (data[7] + data[6]) / 2;  // box center x
-    data[16] = (data[9] + data[8]) / 1;  // box center y
-    data[17] = (data[11] + data[10]) / 1;  // box center z
+    data[16] = (data[9] + data[8]) / 2;  // box center y
+    data[17] = (data[11] + data[10]) / 2;  // box center z
   }
 
   // return component table

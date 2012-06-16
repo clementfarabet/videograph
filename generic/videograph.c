@@ -550,8 +550,8 @@ int videograph_(segm2components)(lua_State *L) {
           data[7] = (x+1)>data[7] ? x+1 : data[7];   // right_x
           data[8] = (y+1)<data[8] ? y+1 : data[8];   // top_y
           data[9] = (y+1)>data[9] ? y+1 : data[9];   // bottom_y
-          data[10] = (y+1)<data[10] ? z+1 : data[10];   // first_z
-          data[11] = (y+1)>data[11] ? z+1 : data[11];   // last_z
+          data[10] = (z+1)<data[10] ? z+1 : data[10];   // first_z
+          data[11] = (z+1)>data[11] ? z+1 : data[11];   // last_z
         }
       }
     }

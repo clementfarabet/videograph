@@ -47,10 +47,12 @@ function videograph.graph(...)
       video = args[2]
       connex = args[3]
       distance = args[4]
+      flow = args[5]
    else
       video = args[1]
       connex = args[2]
       distance = args[3]
+      flow = args[4]
    end
 
    -- defaults
@@ -61,15 +63,20 @@ function videograph.graph(...)
    -- usage
    if not video or (connex ~= 6) or (distance ~= 'e' and distance ~= 'a' and distance ~= 'm') then
       print(xlua.usage('videograph.graph',
-                       'compute an edge-weighted graph on a video sequence', nil,
+                       'compute an edge-weighted graph on a video sequence\n'
+                       + '(if a flow field is passed, edges are warped through time, accoring to the field;\n'
+                       + ' the field should be computed backwards, i.e. from frame (t+1) to frame (t)',
+                       nil,
                        {type='torch.Tensor', help='input tensor (for now LxKxHxW or LxHxW)', req=true},
                        {type='number', help='connexity (edges per vertex): 6', default=6},
                        {type='string', help='distance metric: euclid | angle | max', req='euclid'},
+                       {type='torch.Tensor', help='optional flow field, to constrain time edges (Lx2xHxW)'},
                        "",
                        {type='torch.Tensor', help='destination: existing graph', req=true},
                        {type='torch.Tensor', help='input tensor (for now LxKxHxW or LxHxW)', req=true},
                        {type='number', help='connexity (edges per vertex): 6', default=6},
-                       {type='string', help='distance metric: euclid | angle | max', req='euclid'}))
+                       {type='string', help='distance metric: euclid | angle | max', req='euclid'},
+                       {type='torch.Tensor', help='optional flow field, to constrain time edges (Lx2xHxW)'}))
       xlua.error('incorrect arguments', 'videograph.graph')
    end
 
@@ -77,7 +84,11 @@ function videograph.graph(...)
    dest = dest or torch.Tensor():typeAs(video)
 
    -- compute graph
-   video.videograph.graph(dest, video, connex, distance)
+   if flow then
+      video.videograph.flowgraph(dest, video, flow, connex, distance)
+   else
+      video.videograph.graph(dest, video, connex, distance)
+   end
 
    -- return result
    return dest
@@ -144,7 +155,7 @@ function videograph.extractcomponents(...)
    -- get args
    local args = {...}
    local input = args[1]
-   local img = args[2]
+   local video = args[2]
    local config = args[3] or 'bbox'
    local minsize = args[4] or 1
 
@@ -162,14 +173,10 @@ function videograph.extractcomponents(...)
             'graph = videograph.graph(image.lena())\n'
                .. 'segm = videograph.segmentmst(graph)\n'
                .. 'components = videograph.extractcomponents(segm)',
-            {type='torch.Tensor', 
-             help='input segmentation map (must be LxHxW), and each element must be in [1,NCLASSES]', req=true},
-            {type='torch.Tensor', 
-             help='auxiliary image: if given, then components are cropped from it (must be LxKxHxW)'},
-            {type='string', 
-             help='configuration, one of: bbox | masked', default='bbox'},
-            {type='number', 
-             help='minimum component size to process', default=1}
+            {type='torch.Tensor',  help='input segmentation map (must be LxHxW), and each element must be in [1,NCLASSES]', req=true},
+            {type='torch.Tensor', help='auxiliary video: if given, then components are cropped from it (must be LxKxHxW)'},
+            {type='string', help='configuration, one of: bbox | masked', default='bbox'},
+            {type='number', help='minimum component size to process', default=1}
          )
       )
       xlua.error('incorrect arguments', 'videograph.extractcomponents')
@@ -190,30 +197,79 @@ function videograph.extractcomponents(...)
    end
 
    -- reorganize
-   local components = {centroid_x={}, centroid_y={}, surface={}, 
+   local components = {centroid_x={}, centroid_y={}, centroid_z={}, surface={}, 
                        id = {}, revid = {},
-                       bbox_width = {}, bbox_height = {},
-                       bbox_top = {}, bbox_bottom = {}, bbox_left = {}, bbox_right = {},
-                       bbox_x = {}, bbox_y = {}, patch = {}, mask = {}}
+                       bbox_width = {}, bbox_height = {}, bbox_length = {},
+                       bbox_top = {}, bbox_bottom = {}, 
+                       bbox_left = {}, bbox_right = {},
+                       bbox_first = {}, bbox_last = {},
+                       bbox_x = {}, bbox_y = {}, bbox_z = {}, patch = {}, mask = {}}
    local i = 0
    for _,comp in pairs(hcomponents) do
       i = i + 1
       components.centroid_x[i]  = comp[1]
       components.centroid_y[i]  = comp[2]
-      components.surface[i]     = comp[3]
-      components.id[i]          = comp[5]
-      components.revid[comp[5]] = i
-      components.bbox_left[i]   = comp[6]
-      components.bbox_right[i]  = comp[7]
-      components.bbox_top[i]    = comp[8]
-      components.bbox_bottom[i] = comp[9]
-      components.bbox_width[i]  = comp[10]
-      components.bbox_height[i] = comp[11]
-      components.bbox_x[i]      = comp[12]
-      components.bbox_y[i]      = comp[13]
-      components.mask[i]        = masks[i]
+      components.centroid_z[i]  = comp[3]
+      components.surface[i]     = comp[4]
+      components.id[i]          = comp[6]
+      components.revid[comp[6]] = i
+      components.bbox_left[i]   = comp[7]
+      components.bbox_right[i]  = comp[8]
+      components.bbox_top[i]    = comp[9]
+      components.bbox_bottom[i] = comp[10]
+      components.bbox_first[i]  = comp[11]
+      components.bbox_last[i]   = comp[12]
+      components.bbox_width[i]  = comp[13]
+      components.bbox_height[i] = comp[14]
+      components.bbox_length[i] = comp[15]
+      components.bbox_x[i]      = comp[16]
+      components.bbox_y[i]      = comp[17]
+      components.bbox_z[i]      = comp[18]
    end
    components.size = function(self) return #self.surface end
+
+   -- auxiliary video given ?
+   if video and video:nDimension() == 4 then
+      local c = components
+      local maskit = false
+      if config == 'masked' then maskit = true end
+      for k = 1,i do
+         if c.surface[k] >= minsize then
+            -- get bounding box corners:
+            local top = c.bbox_top[k]
+            local bottom = c.bbox_bottom[k]
+            local height = c.bbox_height[k]
+            
+            local left = c.bbox_left[k]
+            local right = c.bbox_right[k]
+            local width = c.bbox_width[k]
+            
+            local first = c.bbox_first[k]
+            local last = c.bbox_last[k]
+            local length = c.bbox_length[k]
+
+            -- extract patch from image:
+            c.patch[k] = video[{ {first,last},{},{top,bottom},{left,right} }]:clone()
+
+            -- generate mask, if not available
+            if torch.typename(input) and not c.mask[k] then
+               -- the input is a grayscale image, crop it to get the mask:
+               c.mask[k] = input[{ {first,last},{top,bottom},{left,right} }]:clone()
+               local id = components.id[k]
+               c.mask[k]:apply(function(x) 
+                  if x == id then return 1 else return 0 end 
+               end)
+            end
+
+            -- mask box
+            if maskit then
+               for i = 1,c.patch[k]:size(2) do
+                  c.patch[k][{ {},i,{},{} }]:cmul(c.mask[k])
+               end
+            end
+         end
+      end
+   end
 
    -- return both lists
    return components
@@ -328,32 +384,83 @@ function videograph.adjacency(...)
 end
 
 ----------------------------------------------------------------------
--- test me function
+-- test me functions
 --
-function videograph.testme(path)
+function videograph.testme_simple(path)
    if not path then
       print('please provide path to video file: testme("path/to/video")')
       return
    end
    require 'ffmpeg'
    print '<videograph> loading video'
-   video = ffmpeg.Video{path=path, width=500, height=330, fps=5, length=20,
+   video = ffmpeg.Video{path=path, width=500, height=330, fps=10, length=5,
                         encoding='ppm', delete=false}
    print '<videograph> exporting video to tensor'
-   tensor = video:totensor{}
+   input = video:totensor{}
    print '<videograph> smoothing video'
-   for i = 1,(#tensor)[1] do
-      tensor[i] = image.convolve(tensor[i], image.gaussian(3), 'same')
+   for i = 1,(#input)[1] do
+      input[i] = image.convolve(input[i], image.gaussian(3), 'same')
    end
    print '<videograph> constructing graph'
-   graph = videograph.graph(tensor)
+   graph = videograph.graph(input)
    print '<videograph> segmenting graph'
    segm = videograph.segmentmst(graph,5,200)
    print '<videograph> colorize segmentation'
-   segm = videograph.colorize(segm)
+   segmc = videograph.colorize(segm)
    print '<videograph> creating video from graph'
-   processed = ffmpeg.Video{tensor=segm, fps=5}
+   processed = ffmpeg.Video{tensor=segmc, fps=10}
    video:play{loop=true}
    processed:play{loop=true}
    print '<videograph> done.'
+end
+
+function videograph.testme_flow(path)
+   if not path then
+      print('please provide path to video file: testme("path/to/video")')
+      return
+   end
+   require 'ffmpeg'
+   require 'liuflow'
+   torch.setdefaulttensortype('torch.FloatTensor')
+   print '<videograph> loading video'
+   video = ffmpeg.Video{path=path, width=500, height=330, fps=20, length=1,
+                        encoding='ppm', delete=false}
+   print '<videograph> exporting video to tensor'
+   input = video:totensor{}
+   print '<videograph> smoothing video'
+   for i = 1,(#input)[1] do
+      input[i] = image.convolve(input[i], image.gaussian(3), 'same')
+   end
+   print '<videograph> computing dense optical flow'
+   flow = torch.input( (#input)[1], 2, (#input)[3], (#input)[4] )
+   for i = 1,(#input)[1] do
+      xlua.progress(i,(#input)[1])
+      if i > 1 then
+         n,a,_,x,y = liuflow.infer{pair={input[i],input[i-1]},
+                                   alpha=1e-2, minWidth=50,
+                                   nCGIterations=5, nOuterFPIterations=5}
+         flow[i][1] = x
+         flow[i][2] = y
+         image.display(liuflow.xy2rgb(flow[i][1],flow[i][2]))
+      end
+   end
+   print '<videograph> constructing graph'
+   graph = videograph.graph(input,6,'euclid',flow)
+   print '<videograph> segmenting graph'
+   segm = videograph.segmentmst(graph,1,100)
+   print '<videograph> colorize segmentation'
+   segm = videograph.colorize(segm)
+   print '<videograph> creating video from graph'
+   processed = ffmpeg.Video{tensor=segm, fps=2}
+   video:play{loop=true}
+   processed:play{loop=true}
+   print '<videograph> done.'
+end
+
+function videograph.testme_adjacency(path)
+   -- run basic test
+   videograph.testme_simple(path)
+   print '<videograph> compute adjacency matrix'
+   comps = videograph.extractcomponents(segm,input,'masked')
+   videograph.adjacency(segm,comps)
 end

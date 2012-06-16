@@ -125,6 +125,85 @@ static int videograph_(graph)(lua_State *L) {
   return 0;
 }
 
+static int videograph_(flowgraph)(lua_State *L) {
+  // get args
+  THTensor *dst = (THTensor *)luaT_checkudata(L, 1, torch_(Tensor_id));
+  THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_(Tensor_id));
+  THTensor *flow = (THTensor *)luaT_checkudata(L, 3, torch_(Tensor_id));
+  int connex = lua_tonumber(L, 4);
+  const char *dist = lua_tostring(L, 5);
+  char dt = dist[0];
+
+  // make sure input is contiguous
+  src = THTensor_(newContiguous)(src);
+
+  // compute all edge weights
+  if (connex == 6) {
+
+    // get input dims
+    long length, channels, height, width;
+    if (src->nDimension == 4) {
+      length = src->size[0];
+      channels = src->size[1];
+      height = src->size[2];
+      width = src->size[3];
+    } else if (src->nDimension == 3) {
+      channels = 1;
+      length = src->size[0];
+      height = src->size[1];
+      width = src->size[2];
+    }
+
+    // resize output, and fill it with -1 (which means non-valid edge)
+    THTensor_(resize4d)(dst, length, 3, height, width);
+    THTensor_(fill)(dst, 0);
+
+    // get raw pointers
+    real *src_data = THTensor_(data)(src);
+    real *dst_data = THTensor_(data)(dst);
+    real *flow_data = THTensor_(data)(flow);
+
+    // build graph with 6-connexity
+    long num = 0;
+    long x,y,z;
+    for (z = 0; z < length; z++) {
+      for (y = 0; y < height; y++) {
+        for (x = 0; x < width; x++) {
+          // spatial x/y edges
+          if (x < width-1) {
+            dst_data[((z*3+0)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                           x, y, z, x+1, y, z, dt);
+            num++;
+          }
+          if (y < height-1) {
+            dst_data[((z*3+1)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                           x, y, z, x, y+1, z, dt);
+            num++;
+          }
+          // time edges (flow-dependent)
+          if (z < length-1) {
+            real ox = flow_data[(((z+1)*2+0)*height+y)*width+x] / 10;
+            real oy = flow_data[(((z+1)*2+1)*height+y)*width+x] / 10;
+            long fx = floor(x+ox+0.5);
+            long fy = floor(y+oy+0.5);
+            if (fx >= 0 && fy >= 0 && fx < width && fy < height) {
+              dst_data[((z*3+2)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                        fx, fy, z, x, y, z+1, dt);
+              num++;
+            }
+          }
+        }
+      }
+    }
+
+  }
+
+  // cleanup
+  THTensor_(free)(src);
+
+  return 0;
+}
+
 #ifndef _EDGE_STRUCT_
 #define _EDGE_STRUCT_
 typedef struct {
@@ -355,29 +434,39 @@ int videograph_(adjacency)(lua_State *L) {
   long matrix = 2;
 
   // dims
-  long height = input->size[0];
-  long width = input->size[1];
+  long length = input->size[0];
+  long height = input->size[1];
+  long width = input->size[2];
 
   // raw pointers
   real *input_data = THTensor_(data)(input);
 
   // generate output
-  int x,y;
-  for (y = 0; y < height; y++) {
-    for (x = 0; x < width; x++) {
-      long id = input_data[width*y+x];
-      if (x < (width-1)) {
-        long id_east = input_data[width*y+x+1];
-        if (id != id_east) {
-          setneighbor(L, matrix, id, id_east);
-          setneighbor(L, matrix, id_east, id);
+  int x,y,z;
+  for (z = 0; z < length; z++) {
+    for (y = 0; y < height; y++) {
+      for (x = 0; x < width; x++) {
+        long id = input_data[(height*z+width)*y+x];
+        if (x < (width-1)) {
+          long id_east = input_data[(height*z+width)*y+x+1];
+          if (id != id_east) {
+            setneighbor(L, matrix, id, id_east);
+            setneighbor(L, matrix, id_east, id);
+          }
         }
-      }
-      if (y < (height-1)) {
-        long id_south = input_data[width*(y+1)+x];
-        if (id != id_south) {
-          setneighbor(L, matrix, id, id_south);
-          setneighbor(L, matrix, id_south, id);
+        if (y < (height-1)) {
+          long id_south = input_data[(height*z+width)*(y+1)+x];
+          if (id != id_south) {
+            setneighbor(L, matrix, id, id_south);
+            setneighbor(L, matrix, id_south, id);
+          }
+        }
+        if (z < (length-1)) {
+          long id_next = input_data[(height*(z+1)+width)*y+x];
+          if (id != id_next) {
+            setneighbor(L, matrix, id, id_next);
+            setneighbor(L, matrix, id_next, id);
+          }
         }
       }
     }
@@ -396,64 +485,73 @@ int videograph_(segm2components)(lua_State *L) {
   real *segm_data = THTensor_(data)(segm);
 
   // check dims
-  if ((segm->nDimension != 2))
-    THError("<videograph.segm2components> segm must be HxW");
+  if ((segm->nDimension != 3))
+    THError("<videograph.segm2components> segm must be LxHxW");
 
   // get dims
-  int height = segm->size[0];
-  int width = segm->size[1];
+  int length = segm->size[0];
+  int height = segm->size[1];
+  int width = segm->size[2];
 
   // (0) create a hash table to store all components
   lua_newtable(L);
   int table_hash = lua_gettop(L);
 
   // (1) get components' info
-  long x,y;
-  for (y=0; y<height; y++) {
-    for (x=0; x<width; x++) {
-      // get component ID
-      int segm_id = segm_data[width*y+x];
+  long x,y,z;
+  for (z=0; z<length; z++) {
+    for (y=0; y<height; y++) {
+      for (x=0; x<width; x++) {
+        // get component ID
+        int segm_id = segm_data[(height*z+width)*y+x];
 
-      // get geometry entry
-      lua_pushinteger(L,segm_id);
-      lua_rawget(L,table_hash);
-      if (lua_isnil(L,-1)) {
-        // g[segm_id] = nil
-        lua_pop(L,1);
-
-        // then create a table to store geometry of component:
-        // x,y,size,class,hash
-        THTensor *entry = THTensor_(newWithSize1d)(13);
-        real *data = THTensor_(data)(entry);
-        data[0] = x+1;       // x
-        data[1] = y+1;       // y
-        data[2] = 1;         // size
-        data[3] = 0;         // compat with 'histpooling' method
-        data[4] = segm_id;   // hash
-        data[5] = x+1;       // left_x
-        data[6] = x+1;       // right_x
-        data[7] = y+1;       // top_y
-        data[8] = y+1;       // bottom_y
-
-        // store entry
+        // get geometry entry
         lua_pushinteger(L,segm_id);
-        luaT_pushudata(L, entry, torch_(Tensor_id));
-        lua_rawset(L,table_hash); // g[segm_id] = entry
+        lua_rawget(L,table_hash);
+        if (lua_isnil(L,-1)) {
+          // g[segm_id] = nil
+          lua_pop(L,1);
 
-      } else {
-        // retrieve entry
-        THTensor *entry = (THTensor *)luaT_toudata(L, -1, torch_(Tensor_id));
-        lua_pop(L,1);
+          // then create a table to store geometry of component:
+          // x,y,size,class,hash
+          THTensor *entry = THTensor_(newWithSize1d)(18);
+          real *data = THTensor_(data)(entry);
+          data[0] = x+1;       // x
+          data[1] = y+1;       // y
+          data[2] = z+1;       // z
+          data[3] = 1;         // size
+          data[4] = 0;         // compat with 'histpooling' method
+          data[5] = segm_id;   // hash
+          data[6] = x+1;       // left_x
+          data[7] = x+1;       // right_x
+          data[8] = y+1;       // top_y
+          data[9] = y+1;       // bottom_y
+          data[10] = z+1;       // first_z
+          data[11] = z+1;       // last_z
 
-        // update content
-        real *data = THTensor_(data)(entry);
-        data[0] += x+1;       // x += x + 1
-        data[1] += y+1;       // y += y + 1
-        data[2] += 1;         // size += 1
-        data[5] = (x+1)<data[5] ? x+1 : data[5];   // left_x
-        data[6] = (x+1)>data[6] ? x+1 : data[6];   // right_x
-        data[7] = (y+1)<data[7] ? y+1 : data[7];   // top_y
-        data[8] = (y+1)>data[8] ? y+1 : data[8];   // bottom_y
+          // store entry
+          lua_pushinteger(L,segm_id);
+          luaT_pushudata(L, entry, torch_(Tensor_id));
+          lua_rawset(L,table_hash); // g[segm_id] = entry
+
+        } else {
+          // retrieve entry
+          THTensor *entry = (THTensor *)luaT_toudata(L, -1, torch_(Tensor_id));
+          lua_pop(L,1);
+
+          // update content
+          real *data = THTensor_(data)(entry);
+          data[0] += x+1;       // x += x + 1
+          data[1] += y+1;       // y += y + 1
+          data[2] += z+1;       // z += z + 1
+          data[3] += 1;         // size += 1
+          data[6] = (x+1)<data[6] ? x+1 : data[6];   // left_x
+          data[7] = (x+1)>data[7] ? x+1 : data[7];   // right_x
+          data[8] = (y+1)<data[8] ? y+1 : data[8];   // top_y
+          data[9] = (y+1)>data[9] ? y+1 : data[9];   // bottom_y
+          data[10] = (y+1)<data[10] ? z+1 : data[10];   // first_z
+          data[11] = (y+1)>data[11] ? z+1 : data[11];   // last_z
+        }
       }
     }
   }
@@ -466,15 +564,18 @@ int videograph_(segm2components)(lua_State *L) {
     real *data = THTensor_(data)(entry);
 
     // normalize cx and cy, by component's size
-    long size = data[2];
+    long size = data[3];
     data[0] /= size;  // cx/size
     data[1] /= size;  // cy/size
+    data[2] /= size;  // cz/size
 
     // extra info
-    data[9] = data[6] - data[5] + 1;     // box width
-    data[10] = data[8] - data[7] + 1;    // box height
-    data[11] = (data[6] + data[5]) / 2;  // box center x
-    data[12] = (data[8] + data[7]) / 1;  // box center y
+    data[12] = data[7] - data[6] + 1;     // box width
+    data[13] = data[9] - data[8] + 1;    // box height
+    data[14] = data[11] - data[10] + 1;    // box length
+    data[15] = (data[7] + data[6]) / 2;  // box center x
+    data[16] = (data[9] + data[8]) / 1;  // box center y
+    data[17] = (data[11] + data[10]) / 1;  // box center z
   }
 
   // return component table
@@ -483,6 +584,7 @@ int videograph_(segm2components)(lua_State *L) {
 
 static const struct luaL_Reg videograph_(methods__) [] = {
   {"graph", videograph_(graph)},
+  {"flowgraph", videograph_(flowgraph)},
   {"segmentmst", videograph_(segmentmst)},
   {"colorize", videograph_(colorize)},
   {"adjacency", videograph_(adjacency)},

@@ -335,6 +335,9 @@ function videograph.colorize(...)
    return colorized, colormap
 end
 
+-- compat:
+videograph.colormap = imgraph.colormap
+
 ----------------------------------------------------------------------
 -- return the adjacency matrix of a segmentation map
 --

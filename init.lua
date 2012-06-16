@@ -142,7 +142,14 @@ function videograph.segmentmst(...)
 
    -- compute segmented video
    dest = dest or torch.Tensor():typeAs(graph) 
-   local nelts = graph.videograph.segmentmst(dest, graph, thres, minsize, colorize)
+   local nelts
+   if graph:nDimension() == 4 then
+      -- dense image graph (input is an LxKxHxW graph, L=video length, K=1/2 connexity, nnodes=H*W*L)
+      nelts = graph.videograph.segmentmst(dest, graph, thres, minsize, colorize)
+   else
+      -- sparse graph (input is a Nx3 graph, nnodes=N, each entry input[i] is an edge: {node1, node2, weight})
+      nelts = graph.imgraph.segmentmstsparse(dest, graph, thres, minsize, colorize)
+   end
 
    -- return segmented video
    return dest, nelts
@@ -157,7 +164,8 @@ function videograph.extractcomponents(...)
    local input = args[1]
    local video = args[2]
    local config = args[3] or 'bbox'
-   local minsize = args[4] or 1
+   local encoder = args[4]
+   local minsize = args[5] or 1
 
    -- usage
    if not input then
@@ -176,6 +184,7 @@ function videograph.extractcomponents(...)
             {type='torch.Tensor',  help='input segmentation map (must be LxHxW), and each element must be in [1,NCLASSES]', req=true},
             {type='torch.Tensor', help='auxiliary video: if given, then components are cropped from it (must be LxKxHxW)'},
             {type='string', help='configuration, one of: bbox | masked', default='bbox'},
+            {type='function', help='encoder: function that encodes cropped/masked patches into a code (doing it here can save a lot of memory)'},
             {type='number', help='minimum component size to process', default=1}
          )
       )
@@ -266,6 +275,15 @@ function videograph.extractcomponents(...)
                for i = 1,c.patch[k]:size(2) do
                   c.patch[k][{ {},i,{},{} }]:cmul(c.mask[k])
                end
+            end
+
+            -- encoder?
+            if encoder then
+               c.descriptor = c.descriptor or {}
+               c.descriptor[k] = encoder(c.patch[k], c.mask[k])
+               c.patch[k] = nil
+               c.mask[k] = nil
+               collectgarbage()
             end
          end
       end
@@ -451,7 +469,7 @@ function videograph.testme_flow(path)
    print '<videograph> colorize segmentation'
    segm = videograph.colorize(segm)
    print '<videograph> creating video from graph'
-   processed = ffmpeg.Video{tensor=segm, fps=2}
+   processed = ffmpeg.Video{tensor=segm, fps=20}
    video:play{loop=true}
    processed:play{loop=true}
    print '<videograph> done.'

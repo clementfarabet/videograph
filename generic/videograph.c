@@ -443,26 +443,27 @@ int videograph_(adjacency)(lua_State *L) {
 
   // generate output
   int x,y,z;
+  long max = 0;
   for (z = 0; z < length; z++) {
     for (y = 0; y < height; y++) {
       for (x = 0; x < width; x++) {
-        long id = input_data[(height*z+width)*y+x];
+        long id = input_data[(height*z+y)*width+x];
         if (x < (width-1)) {
-          long id_east = input_data[(height*z+width)*y+x+1];
+          long id_east = input_data[(height*z+y)*width+(x+1)];
           if (id != id_east) {
             setneighbor(L, matrix, id, id_east);
             setneighbor(L, matrix, id_east, id);
           }
         }
         if (y < (height-1)) {
-          long id_south = input_data[(height*z+width)*(y+1)+x];
+          long id_south = input_data[(height*z+(y+1))*width+x];
           if (id != id_south) {
             setneighbor(L, matrix, id, id_south);
             setneighbor(L, matrix, id_south, id);
           }
         }
         if (z < (length-1)) {
-          long id_next = input_data[(height*(z+1)+width)*y+x];
+          long id_next = input_data[(height*(z+1)+y)*width+x];
           if (id != id_next) {
             setneighbor(L, matrix, id, id_next);
             setneighbor(L, matrix, id_next, id);

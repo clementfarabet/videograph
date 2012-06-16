@@ -504,7 +504,7 @@ int videograph_(segm2components)(lua_State *L) {
     for (y=0; y<height; y++) {
       for (x=0; x<width; x++) {
         // get component ID
-        int segm_id = segm_data[(height*z+width)*y+x];
+        int segm_id = segm_data[(height*z+y)*width+x];
 
         // get geometry entry
         lua_pushinteger(L,segm_id);

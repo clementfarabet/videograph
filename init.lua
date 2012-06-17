@@ -281,9 +281,6 @@ function videograph.extractcomponents(...)
             if encoder then
                c.descriptor = c.descriptor or {}
                c.descriptor[k] = encoder(c.patch[k], c.mask[k])
-               c.patch[k] = nil
-               c.mask[k] = nil
-               collectgarbage()
             end
          end
       end

@@ -109,46 +109,51 @@ function videograph.segmentmst(...)
       thres = args[3]
       minsize = args[4]
       colorize = args[5]
+      adaptive = args[6]
    else
       graph = args[1]
       thres = args[2]
       minsize = args[3]
       colorize = args[4]
+      adaptive = args[5]
    end
 
    -- defaults
    thres = thres or 3
    minsize = minsize or 20
    colorize = colorize or false
+   if adaptive == nil then adaptive = true end
 
    -- usage
    if not graph then
       print(xlua.usage('videograph.segmentmst',
-                       'segment an edge-weighted graph, using a surface adaptive criterion\n'
-                          .. 'on the min-spanning tree of the graph (see Felzenszwalb et al. 2004)',
+                       'segment an edge-weighted graph, by thresholding its mininum spanning tree\n'
+                       ..'(an adaptive threshold is used by default, as in Felzenszwalb et al.)',
                        nil,
                        {type='torch.Tensor', help='input graph', req=true},
                        {type='number', help='base threshold for merging', default=3},
                        {type='number', help='min size: merge components of smaller size', default=20},
                        {type='boolean', help='replace components id by random colors', default=false},
+                       {type='boolean', help='use adaptive threshold (Felzenszwalb trick)', default=true},
                        "",
                        {type='torch.Tensor', help='destination tensor', req=true},
                        {type='torch.Tensor', help='input graph', req=true},
                        {type='number', help='base threshold for merging', default=3},
                        {type='number', help='min size: merge components of smaller size', default=20},
-                       {type='boolean', help='replace components id by random colors', default=false}))
+                       {type='boolean', help='replace components id by random colors', default=false},
+                       {type='boolean', help='use adaptive threshold (Felzenszwalb trick)', default=true}))
       xlua.error('incorrect arguments', 'videograph.segmentmst')
    end
 
    -- compute segmented video
-   dest = dest or torch.Tensor():typeAs(graph) 
+   dest = dest or torch.Tensor():typeAs(graph)
    local nelts
    if graph:nDimension() == 4 then
       -- dense image graph (input is an LxKxHxW graph, L=video length, K=1/2 connexity, nnodes=H*W*L)
-      nelts = graph.videograph.segmentmst(dest, graph, thres, minsize, colorize)
+      nelts = graph.videograph.segmentmst(dest, graph, thres, minsize, adaptive, colorize)
    else
       -- sparse graph (input is a Nx3 graph, nnodes=N, each entry input[i] is an edge: {node1, node2, weight})
-      nelts = graph.imgraph.segmentmstsparse(dest, graph, thres, minsize, colorize)
+      nelts = graph.imgraph.segmentmstsparse(dest, graph, thres, minsize, adaptive, colorize)
    end
 
    -- return segmented video

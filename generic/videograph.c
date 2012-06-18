@@ -242,7 +242,8 @@ static int videograph_(segmentmst)(lua_State *L) {
   THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_(Tensor_id));
   real thres = lua_tonumber(L, 3);
   int minsize = lua_tonumber(L, 4);
-  int color = lua_toboolean(L, 5);
+  int adaptivethres = lua_toboolean(L, 5);
+  int color = lua_toboolean(L, 6);
 
   // dims
   long length = src->size[0];
@@ -304,7 +305,11 @@ static int videograph_(segmentmst)(lua_State *L) {
       if ((edges[i].w <= threshold[a]) && (edges[i].w <= threshold[b])) {
         set_join(set, a, b);
         a = set_find(set, a);
-        threshold[a] = edges[i].w + thres/set->elts[a].surface;
+        if (adaptivethres) {
+          threshold[a] = edges[i].w + thres/set->elts[a].surface;
+        } else {
+          threshold[a] = edges[i].w;
+        }
       }
     }
   }

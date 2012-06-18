@@ -117,6 +117,108 @@ static int videograph_(graph)(lua_State *L) {
       }
     }
 
+  } if (connex == 26) {
+
+    // get input dims
+    long length, channels, height, width;
+    if (src->nDimension == 4) {
+      length = src->size[0];
+      channels = src->size[1];
+      height = src->size[2];
+      width = src->size[3];
+    } else if (src->nDimension == 3) {
+      channels = 1;
+      length = src->size[0];
+      height = src->size[1];
+      width = src->size[2];
+    }
+
+    // resize output, and fill it with -1 (which means non-valid edge)
+    THTensor_(resize4d)(dst, length, 13, height, width);
+    THTensor_(fill)(dst, 0);
+
+    // get raw pointers
+    real *src_data = THTensor_(data)(src);
+    real *dst_data = THTensor_(data)(dst);
+
+    // build graph with 26-connexity
+    long num = 0;
+    long x,y,z;
+    for (z = 0; z < length; z++) {
+      for (y = 0; y < height; y++) {
+        for (x = 0; x < width; x++) {
+          if (x < width-1) {
+            dst_data[((z*13+0)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                           x, y, z, x+1, y, z, dt);
+            num++;
+          }
+          if (y < height-1) {
+            dst_data[((z*13+1)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                           x, y, z, x, y+1, z, dt);
+            num++;
+          }
+          if ((x < width-1) && (y < height-1)) {
+            dst_data[((z*13+2)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                           x, y, z, x+1, y+1, z, dt);
+            num++;
+          }
+          if ((x < width-1) && (y > 0)) {
+            dst_data[((z*13+3)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                           x, y, z, x+1, y-1, z, dt);
+            num++;
+          }
+          if (z < length-1) {
+            dst_data[((z*13+4)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                           x, y, z, x, y, z+1, dt);
+            num++;
+
+            if (x < width-1) {
+              dst_data[((z*13+5)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x+1, y, z+1, dt);
+              num++;
+            }
+            if (y < height-1) {
+              dst_data[((z*13+6)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x, y+1, z+1, dt);
+              num++;
+            }
+            if ((x < width-1) && (y < height-1)) {
+              dst_data[((z*13+7)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x+1, y+1, z+1, dt);
+              num++;
+            }
+            if ((x < width-1) && (y > 0)) {
+              dst_data[((z*13+8)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x+1, y-1, z+1, dt);
+              num++;
+            }
+
+            if (x > 0) {
+              dst_data[((z*13+9)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x-1, y, z+1, dt);
+              num++;
+            }
+            if (y > 0) {
+              dst_data[((z*13+10)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x, y-1, z+1, dt);
+              num++;
+            }
+            if ((x > 0) && (y > 0)) {
+              dst_data[((z*13+11)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x-1, y-1, z+1, dt);
+              num++;
+            }
+            if ((y < height-1) && (x > 0)) {
+              dst_data[((z*13+12)*height+y)*width+x] = videograph_(ndiff)(src_data, channels, height, width,
+                                                                             x, y, z, x-1, y+1, z+1, dt);
+              num++;
+            }
+
+          }
+        }
+      }
+    }
+
   }
 
   // cleanup
@@ -182,8 +284,8 @@ static int videograph_(flowgraph)(lua_State *L) {
           }
           // time edges (flow-dependent)
           if (z < length-1) {
-            real ox = flow_data[(((z+1)*2+0)*height+y)*width+x] / 10;
-            real oy = flow_data[(((z+1)*2+1)*height+y)*width+x] / 10;
+            real ox = flow_data[(((z+1)*2+0)*height+y)*width+x];
+            real oy = flow_data[(((z+1)*2+1)*height+y)*width+x];
             long fx = floor(x+ox+0.5);
             long fy = floor(y+oy+0.5);
             if (fx >= 0 && fy >= 0 && fx < width && fy < height) {
@@ -262,23 +364,109 @@ static int videograph_(segmentmst)(lua_State *L) {
   for (z = 0; z < length; z++) {
     for (y = 0; y < height; y++) {
       for (x = 0; x < width; x++) {
-        if (x < width-1) {
-          edges[nedges].a = (z*height+y)*width+x;
-          edges[nedges].b = (z*height+y)*width+(x+1);
-          edges[nedges].w = src_data[((z*3+0)*height+y)*width+x];
-          nedges++;
-        }
-        if (y < height-1) {
-          edges[nedges].a = (z*height+y)*width+x;
-          edges[nedges].b = (z*height+(y+1))*width+x;
-          edges[nedges].w = src_data[((z*3+1)*height+y)*width+x];
-          nedges++;
-        }
-        if (z < length-1) {
-          edges[nedges].a = (z*height+y)*width+x;
-          edges[nedges].b = ((z+1)*height+y)*width+x;
-          edges[nedges].w = src_data[((z*3+2)*height+y)*width+x];
-          nedges++;
+        if (nmaps == 3) { 
+          // 6-connexity
+          if (x < width-1) {
+            edges[nedges].a = (z*height+y)*width+x;
+            edges[nedges].b = (z*height+y)*width+(x+1);
+            edges[nedges].w = src_data[((z*3+0)*height+y)*width+x];
+            nedges++;
+          }
+          if (y < height-1) {
+            edges[nedges].a = (z*height+y)*width+x;
+            edges[nedges].b = (z*height+(y+1))*width+x;
+            edges[nedges].w = src_data[((z*3+1)*height+y)*width+x];
+            nedges++;
+          }
+          if (z < length-1) {
+            edges[nedges].a = (z*height+y)*width+x;
+            edges[nedges].b = ((z+1)*height+y)*width+x;
+            edges[nedges].w = src_data[((z*3+2)*height+y)*width+x];
+            nedges++;
+          }
+        } else if (nmaps == 13) {
+          // 26-connexity
+          if (x < width-1) {
+            edges[nedges].a = (z*height+y)*width+x;
+            edges[nedges].b = (z*height+y)*width+(x+1);
+            edges[nedges].w = src_data[((z*13+0)*height+y)*width+x];
+            nedges++;
+          }
+          if (y < height-1) {
+            edges[nedges].a = (z*height+y)*width+x;
+            edges[nedges].b = (z*height+(y+1))*width+x;
+            edges[nedges].w = src_data[((z*13+1)*height+y)*width+x];
+            nedges++;
+          }
+          if ((x < width-1) && (y < height-1)) {
+            edges[nedges].a = (z*height+y) * width + x;
+            edges[nedges].b = (z*height+(y+1)) * width + (x+1);
+            edges[nedges].w = src_data[((z*13+2)*height+y)*width+x];
+            nedges++;
+          }
+          if ((x < width-1) && (y > 0)) {
+            edges[nedges].a = (z*height+y) * width + x;
+            edges[nedges].b = (z*height+(y-1)) * width + (x+1);
+            edges[nedges].w = src_data[((z*13+3)*height+y)*width+x];
+            nedges++;
+          }
+          if (z < length-1) {
+            edges[nedges].a = (z*height+y)*width+x;
+            edges[nedges].b = ((z+1)*height+y)*width+x;
+            edges[nedges].w = src_data[((z*13+4)*height+y)*width+x];
+            nedges++;
+
+            if (x < width-1) {
+              edges[nedges].a = (z*height+y)*width+x;
+              edges[nedges].b = ((z+1)*height+y)*width+(x+1);
+              edges[nedges].w = src_data[((z*13+5)*height+y)*width+x];
+              nedges++;
+            }
+            if (y < height-1) {
+              edges[nedges].a = (z*height+y)*width+x;
+              edges[nedges].b = ((z+1)*height+(y+1))*width+x;
+              edges[nedges].w = src_data[((z*13+6)*height+y)*width+x];
+              nedges++;
+            }
+            if ((x < width-1) && (y < height-1)) {
+              edges[nedges].a = (z*height+y) * width + x;
+              edges[nedges].b = ((z+1)*height+(y+1)) * width + (x+1);
+              edges[nedges].w = src_data[((z*13+7)*height+y)*width+x];
+              nedges++;
+            }
+            if ((x < width-1) && (y > 0)) {
+              edges[nedges].a = (z*height+y) * width + x;
+              edges[nedges].b = ((z+1)*height+(y-1)) * width + (x+1);
+              edges[nedges].w = src_data[((z*13+8)*height+y)*width+x];
+              nedges++;
+            }
+
+            if (x > 0) {
+              edges[nedges].a = (z*height+y)*width+x;
+              edges[nedges].b = ((z+1)*height+y)*width+(x-1);
+              edges[nedges].w = src_data[((z*13+9)*height+y)*width+x];
+              nedges++;
+            }
+            if (y > 0) {
+              edges[nedges].a = (z*height+y)*width+x;
+              edges[nedges].b = ((z+1)*height+(y-1))*width+x;
+              edges[nedges].w = src_data[((z*13+10)*height+y)*width+x];
+              nedges++;
+            }
+            if ((x > 0) && (y > 0)) {
+              edges[nedges].a = (z*height+y) * width + x;
+              edges[nedges].b = ((z+1)*height+(y-1)) * width + (x-1);
+              edges[nedges].w = src_data[((z*13+11)*height+y)*width+x];
+              nedges++;
+            }
+            if ((y < height-1) && (x > 0)) {
+              edges[nedges].a = (z*height+y) * width + x;
+              edges[nedges].b = ((z+1)*height+(y+1)) * width + (x-1);
+              edges[nedges].w = src_data[((z*13+12)*height+y)*width+x];
+              nedges++;
+            }
+
+          }
         }
       }
     }

@@ -61,14 +61,14 @@ function videograph.graph(...)
               or ((distance == 'angle') and 'a') or ((distance == 'max') and 'm') 
 
    -- usage
-   if not video or (connex ~= 6) or (distance ~= 'e' and distance ~= 'a' and distance ~= 'm') then
+   if not video or (connex ~= 6 and connex ~= 26) or (distance ~= 'e' and distance ~= 'a' and distance ~= 'm') then
       print(xlua.usage('videograph.graph',
                        'compute an edge-weighted graph on a video sequence\n'
-                       + '(if a flow field is passed, edges are warped through time, accoring to the field;\n'
-                       + ' the field should be computed backwards, i.e. from frame (t+1) to frame (t)',
+                       .. '(if a flow field is passed, edges are warped through time, accoring to the field;\n'
+                       .. ' the field should be computed backwards, i.e. from frame (t+1) to frame (t)',
                        nil,
                        {type='torch.Tensor', help='input tensor (for now LxKxHxW or LxHxW)', req=true},
-                       {type='number', help='connexity (edges per vertex): 6', default=6},
+                       {type='number', help='connexity (edges per vertex): 6 | 26', default=6},
                        {type='string', help='distance metric: euclid | angle | max', req='euclid'},
                        {type='torch.Tensor', help='optional flow field, to constrain time edges (Lx2xHxW)'},
                        "",

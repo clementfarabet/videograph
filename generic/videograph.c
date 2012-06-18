@@ -307,8 +307,6 @@ static int videograph_(segmentmst)(lua_State *L) {
         a = set_find(set, a);
         if (adaptivethres) {
           threshold[a] = edges[i].w + thres/set->elts[a].surface;
-        } else {
-          threshold[a] = edges[i].w;
         }
       }
     }

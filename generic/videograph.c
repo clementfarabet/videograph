@@ -58,8 +58,8 @@ static inline real videograph_(ndiff)(real *img,
 
 static int videograph_(graph)(lua_State *L) {
   // get args
-  THTensor *dst = (THTensor *)luaT_checkudata(L, 1, torch_(Tensor_id));
-  THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_(Tensor_id));
+  THTensor *dst = (THTensor *)luaT_checkudata(L, 1, torch_Tensor);
+  THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_Tensor);
   int connex = lua_tonumber(L, 3);
   const char *dist = lua_tostring(L, 4);
   char dt = dist[0];
@@ -71,7 +71,7 @@ static int videograph_(graph)(lua_State *L) {
   if (connex == 6) {
 
     // get input dims
-    long length, channels, height, width;
+    long length=1, channels=1, height=1, width=1;
     if (src->nDimension == 4) {
       length = src->size[0];
       channels = src->size[1];
@@ -120,7 +120,7 @@ static int videograph_(graph)(lua_State *L) {
   } if (connex == 26) {
 
     // get input dims
-    long length, channels, height, width;
+    long length=1, channels=1, height=1, width=1;
     if (src->nDimension == 4) {
       length = src->size[0];
       channels = src->size[1];
@@ -229,9 +229,9 @@ static int videograph_(graph)(lua_State *L) {
 
 static int videograph_(flowgraph)(lua_State *L) {
   // get args
-  THTensor *dst = (THTensor *)luaT_checkudata(L, 1, torch_(Tensor_id));
-  THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_(Tensor_id));
-  THTensor *flow = (THTensor *)luaT_checkudata(L, 3, torch_(Tensor_id));
+  THTensor *dst = (THTensor *)luaT_checkudata(L, 1, torch_Tensor);
+  THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_Tensor);
+  THTensor *flow = (THTensor *)luaT_checkudata(L, 3, torch_Tensor);
   int connex = lua_tonumber(L, 4);
   const char *dist = lua_tostring(L, 5);
   char dt = dist[0];
@@ -243,7 +243,7 @@ static int videograph_(flowgraph)(lua_State *L) {
   if (connex == 6) {
 
     // get input dims
-    long length, channels, height, width;
+    long length=1, channels=1, height=1, width=1;
     if (src->nDimension == 4) {
       length = src->size[0];
       channels = src->size[1];
@@ -340,8 +340,8 @@ void sort_edges(Edge *data, int N)
 
 static int videograph_(segmentmst)(lua_State *L) {
   // get args
-  THTensor *dst = (THTensor *)luaT_checkudata(L, 1, torch_(Tensor_id));
-  THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_(Tensor_id));
+  THTensor *dst = (THTensor *)luaT_checkudata(L, 1, torch_Tensor);
+  THTensor *src = (THTensor *)luaT_checkudata(L, 2, torch_Tensor);
   real thres = lua_tonumber(L, 3);
   int minsize = lua_tonumber(L, 4);
   int adaptivethres = lua_toboolean(L, 5);
@@ -559,9 +559,9 @@ static int videograph_(segmentmst)(lua_State *L) {
 
 int videograph_(colorize)(lua_State *L) {
   // get args
-  THTensor *output = (THTensor *)luaT_checkudata(L, 1, torch_(Tensor_id));
-  THTensor *input = (THTensor *)luaT_checkudata(L, 2, torch_(Tensor_id));
-  THTensor *colormap = (THTensor *)luaT_checkudata(L, 3, torch_(Tensor_id));
+  THTensor *output = (THTensor *)luaT_checkudata(L, 1, torch_Tensor);
+  THTensor *input = (THTensor *)luaT_checkudata(L, 2, torch_Tensor);
+  THTensor *colormap = (THTensor *)luaT_checkudata(L, 3, torch_Tensor);
 
   // dims
   long length = input->size[0];
@@ -621,7 +621,7 @@ static inline void setneighbor(lua_State *L, long matrix, long id, long idn) {
 
 int videograph_(adjacency)(lua_State *L) {
   // get args
-  THTensor *input = THTensor_(newContiguous)((THTensor *)luaT_checkudata(L, 1, torch_(Tensor_id)));
+  THTensor *input = THTensor_(newContiguous)((THTensor *)luaT_checkudata(L, 1, torch_Tensor));
   long matrix = 2;
 
   // dims
@@ -634,7 +634,6 @@ int videograph_(adjacency)(lua_State *L) {
 
   // generate output
   int x,y,z;
-  long max = 0;
   for (z = 0; z < length; z++) {
     for (y = 0; y < height; y++) {
       for (x = 0; x < width; x++) {
@@ -673,7 +672,7 @@ int videograph_(adjacency)(lua_State *L) {
 
 int videograph_(segm2components)(lua_State *L) {
   // get args
-  THTensor *segm = (THTensor *)luaT_checkudata(L, 1, torch_(Tensor_id));
+  THTensor *segm = (THTensor *)luaT_checkudata(L, 1, torch_Tensor);
   real *segm_data = THTensor_(data)(segm);
 
   // check dims
@@ -723,12 +722,12 @@ int videograph_(segm2components)(lua_State *L) {
 
           // store entry
           lua_pushinteger(L,segm_id);
-          luaT_pushudata(L, entry, torch_(Tensor_id));
+          luaT_pushudata(L, entry, torch_Tensor);
           lua_rawset(L,table_hash); // g[segm_id] = entry
 
         } else {
           // retrieve entry
-          THTensor *entry = (THTensor *)luaT_toudata(L, -1, torch_(Tensor_id));
+          THTensor *entry = (THTensor *)luaT_toudata(L, -1, torch_Tensor);
           lua_pop(L,1);
 
           // update content
@@ -752,7 +751,7 @@ int videograph_(segm2components)(lua_State *L) {
   lua_pushnil(L);
   while (lua_next(L, table_hash) != 0) {
     // retrieve entry
-    THTensor *entry = (THTensor *)luaT_toudata(L, -1, torch_(Tensor_id)); lua_pop(L,1);
+    THTensor *entry = (THTensor *)luaT_toudata(L, -1, torch_Tensor); lua_pop(L,1);
     real *data = THTensor_(data)(entry);
 
     // normalize cx and cy, by component's size
@@ -786,7 +785,7 @@ static const struct luaL_Reg videograph_(methods__) [] = {
 
 static void videograph_(Init)(lua_State *L)
 {
-  luaT_pushmetaclass(L, torch_(Tensor_id));
+  luaT_pushmetatable(L, torch_Tensor);
   luaT_registeratname(L, videograph_(methods__), "videograph");
   lua_pop(L,1);
 }

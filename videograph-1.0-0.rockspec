@@ -13,7 +13,7 @@ This package provides routines to construct graphs on videos,
 segment them, build trees out of them, and convert them back
 to videos.
    ]],
-   homepage = "https://github.com/clementfarabet/lua---imgraph",
+   homepage = "https://github.com/clementfarabet/lua---videograph",
    license = "GPL"
 }
 

@@ -2,7 +2,7 @@ package = "videograph"
 version = "1.0-0"
 
 source = {
-   url = "git://github.com/clementfarabet/lua---videograph",
+   url = "git://github.com/clementfarabet/videograph",
    tag = "1.0-0"
 }
 
@@ -13,7 +13,7 @@ This package provides routines to construct graphs on videos,
 segment them, build trees out of them, and convert them back
 to videos.
    ]],
-   homepage = "https://github.com/clementfarabet/lua---videograph",
+   homepage = "https://github.com/clementfarabet/videograph",
    license = "GPL"
 }
 
